@@ -222,7 +222,7 @@ namecall = hookmetamethod(game, "__namecall", function(self, ...)
                     AttackType = "Gun"
                 elseif AttackType == "SwingCharged" then
                     AttackType = "Charged"
-                else
+                elseif string.sub(Args[2],1,5) = "Swing" then
                     AttackType = "Jab"
                 end
                 local Target = GetClosest()
