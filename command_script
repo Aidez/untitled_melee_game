@@ -230,8 +230,8 @@ namecall = hookmetamethod(game, "__namecall", function(self, ...)
                     game.ReplicatedStorage.Server.Events.Attack.FireServer(game.ReplicatedStorage.Server.Events.Attack, AttackType, Target, Args[3][2], nil, false)
                 elseif Target ~= nil and AttackType == "Charged" then
                     game.ReplicatedStorage.Server.Events.Attack.FireServer(game.ReplicatedStorage.Server.Events.Attack, AttackType, Target, Args[3][2], 1.0478, true)
-                else
-                    game.ReplicatedStorage.Server.Events.Attack.FireServer(game.ReplicatedStorage.Server.Events.Attack, AttackType, Target, Args[3][2], 1.0478, true)
+                elseif Target ~= nil and AttackType == "Jab" then
+                    game.ReplicatedStorage.Server.Events.Attack.FireServer(game.ReplicatedStorage.Server.Events.Attack, AttackType, Target, Args[3][2], nil, false)
                 end
                 if Toggles.AutoBlock then
                     spawn(function()
