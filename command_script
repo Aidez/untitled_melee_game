@@ -23,11 +23,15 @@ game.StarterGui:SetCore("SendNotification", {
     Duration = 7;
 })
 
+local ClientFolder = game:GetService("ReplicatedStorage"):WaitForChild("Client")
+local Statistics = ClientFolder:WaitForChild("Modules",10000)
 
 local Toggles = {
     Killaura = false;
     InfStamina = false;
     AutoBlock = false;
+    OneShot = false;
+    SilentAim = false;
 }
 
 local Debounces = {
@@ -47,6 +51,9 @@ local Variables = {
 }
 
 local Tables = {
+    Stats = {
+        WeaponStats = require(Statistics:WaitForChild("W_STATISTICS",20));
+    };
     SuperRun = {
         WHeld = false;
         SHeld = false;
@@ -93,6 +100,33 @@ local function Attack(Model,UntilDeath)
     game:GetService("ReplicatedStorage").Server.Events.Attack:FireServer("Charged", Model, 1, 1.0478, true)
 end
 
+local function GetClosest()
+    local LowestDistance = math.huge
+    local ClosestCharacter = nil
+    local Players = game.Players.GetPlayers(game.Players)
+    local Characters = {}
+    for i,v in pairs(Players) do
+        if v ~= Player and v.Character ~= nil then
+            table.insert(Characters, v.Character)
+        end
+    end
+    for i,v in pairs(Characters) do
+        if v ~= nil then
+            if v.FindFirstChild(v, "HumanoidRootPart") then
+                local InitialDis = (v.HumanoidRootPart.Position - game.Workspace.CurrentCamera.CFrame.p).magnitude
+                local Ray = Ray.new(game.Workspace.CurrentCamera.CFrame.p, (Mouse.Hit.p - game.Workspace.CurrentCamera.CFrame.p).unit * InitialDis)
+                local Part,Position = game.Workspace.FindPartOnRay(game.Workspace, Ray, game.Workspace)
+                local FinalDifference = math.floor((Position - v.HumanoidRootPart.Position).magnitude)
+                if FinalDifference < LowestDistance then
+                    ClosestCharacter = v
+                    LowestDistance = FinalDifference
+                end
+            end
+        end
+    end
+    return ClosestCharacter
+end
+
 -- CONNECTION FUNCTIONS -- 
 
 local function RenderStepped()
@@ -126,6 +160,43 @@ local function RenderStepped()
     end
 end
 
+local function CharacterLoaded(character)
+    if Toggles.AutoBlock then
+        game.ReplicatedStorage.Server.Events.Update.FireServer(game.ReplicatedStorage.Server.Events.Update,"Blocking", true)
+    end
+    if Toggles.InfStamina then
+        repeat wait() until GrabMainScript() ~= nil
+        local TempEnv = getsenv(GrabMainScript())
+        local HUD = Player.PlayerGui:WaitForChild("HUD",10) or Player.PlayerGui
+        local StaminaFrame = HUD:WaitForChild("StaminaFrame",10)
+        if TempEnv == nil or StaminaFrame == nil then
+            return
+        end
+        repeat wait() until TempEnv["Stagger"] ~= nil
+        local UpValues = getupvalues(TempEnv.Stagger)
+        task.wait(0.3)
+        if Variables.StaminaUpdateConnection ~= nil then
+            Variables.StaminaUpdateConnection:Disconnect()
+            Variables.StaminaUpdateConnection = nil
+        end
+        for i,v in pairs(UpValues) do
+            if v == tonumber(StaminaFrame.EmptyBar.TextLabel.Text) then
+                setupvalue(TempEnv.Stagger,i,100)
+                if Variables.StaminaUpdateConnection == nil then
+                    Variables.StaminaUpdateConnection = StaminaFrame.EmptyBar.TextLabel.Changed:Connect(function()
+                         local MainScript = GrabMainScript()
+                         if MainScript ~= nil then
+                             local TempEnv = getsenv(MainScript)
+                             setupvalue(TempEnv.Stagger,i,100) 
+                         end
+                    end)
+                end
+            end
+        end
+        StaminaFrame.EmptyBar.TextLabel.Text = 100
+    end
+end
+
 -- Meta Functions --
 
 namecall = hookmetamethod(game, "__namecall", function(self, ...)
@@ -140,9 +211,72 @@ namecall = hookmetamethod(game, "__namecall", function(self, ...)
                return
            end
         end
+        if RemoteName == "Sound" then
+            if Toggles.SilentAim and not checkcaller() and typeof(Args[3]) == "table" then
+                if Toggles.AutoBlock then
+                    game.ReplicatedStorage.Server.Events.Update.FireServer(game.ReplicatedStorage.Server.Events.Update,"Blocking", false)
+                end
+                local AttackType = Args[2]
+                if AttackType == "Fire" then
+                    AttackType = "Gun"
+                elseif AttackType == "SwingCharged" then
+                    AttackType = "Charged"
+                else
+                    AttackType = "Jab"
+                end
+                local Target = GetClosest()
+                if Target ~= nil then
+                    game.ReplicatedStorage.Server.Events.Attack.FireServer(game.ReplicatedStorage.Server.Events.Attack, AttackType, Target, Args[3][2], nil, false)
+                end
+                if Toggles.AutoBlock then
+                    spawn(function()
+                        task.wait()
+                        game.ReplicatedStorage.Server.Events.Update.FireServer(game.ReplicatedStorage.Server.Events.Update,"Blocking", true)
+                    end)
+                end
+                return namecall(self, ...)
+            end
+        end
         if RemoteName == "Attack" then
             if Toggles.AutoBlock then
                 game.ReplicatedStorage.Server.Events.Update.FireServer(game.ReplicatedStorage.Server.Events.Update,"Blocking", false)
+            end
+--[[
+            if Toggles.OneShot and not checkcaller() and typeof(Args[2]) == "Instance" and Args[2].ClassName == "Model" then
+                local Model = Args[2]
+                if not Model.FindFirstChild(Model,"Humanoid") or not Player.FindFirstChild(Player,"Inventory") then
+                    return namecall(self, ...)
+                end
+                local WeaponName = Player.Inventory["Slot"..tostring(Args[3])].Value
+                local WeaponStats = Tables.Stats.WeaponStats[WeaponName]
+                if WeaponStats == nil or WeaponStats["DamageRating"] == nil then
+                    return namecall(self, ...)
+                end
+                local Damage
+                if Args[1] == "Jab" then
+                    Damage = WeaponStats["DamageRating"][1]
+                elseif Args[1] == "Charged" then
+                    Damage = WeaponStats["DamageRating"][2]
+                elseif Args[1] == "Gun" then
+                    Damage = WeaponStats["DamageRating"][3] or WeaponStats["DamageRating"][2]
+                end
+                spawn(function()
+                    for i = 1,math.floor((Model.Humanoid.Health/Damage)) + 1 do
+                        if game.Players.LocalPlayer.Character ~= nil then
+                            if game.Players.LocalPlayer.Character.States.FindFirstChild(game.Players.LocalPlayer.Character.States,"ChargedAttack").Value == true then
+                                game.Players.LocalPlayer.Character.States.ChargedAttack.Changed:Wait()
+                            elseif game.Players.LocalPlayer.Character.States.FindFirstChild(game.Players.LocalPlayer.Character.States,"JabAttack").Value == true then
+                                game.Players.LocalPlayer.Character.States.JabAttack.Changed:Wait()
+                            end
+                        end
+                        game.ReplicatedStorage.Server.Events.Update.FireServer(game.ReplicatedStorage.Server.Events.Update,"Blocking", false)
+                        self.FireServer(self, unpack(Args))
+                    end
+                    game.ReplicatedStorage.Server.Events.Update.FireServer(game.ReplicatedStorage.Server.Events.Update,"Blocking", true)
+                end)
+            end
+--]]
+            if Toggles.AutoBlock then
                 spawn(function()
                     task.wait()
                     game.ReplicatedStorage.Server.Events.Update.FireServer(game.ReplicatedStorage.Server.Events.Update,"Blocking", true)
@@ -243,8 +377,11 @@ local Commands = {
                         setupvalue(TempEnv.Stagger,i,100)
                         if Variables.StaminaUpdateConnection == nil then
                             Variables.StaminaUpdateConnection = StaminaFrame.EmptyBar.TextLabel.Changed:Connect(function()
-                                 local TempEnv = getsenv(GrabMainScript())
-                                 setupvalue(TempEnv.Stagger,i,100) 
+                                 local MainScript = GrabMainScript()
+                                 if MainScript ~= nil then
+                                     local TempEnv = getsenv(MainScript)
+                                     setupvalue(TempEnv.Stagger,i,100) 
+                                 end
                             end)
                         end
                     end
@@ -287,6 +424,46 @@ local Commands = {
             else
                 game:GetService("ReplicatedStorage").Server.Events.Update:FireServer("Blocking", false)
                 currenttext = "AutoBlock is now OFF!"
+            end
+            game.StarterGui:SetCore("SendNotification", {
+                Title = "notification";
+                Text = currenttext;
+                Icon = "rbxassetid://2541869220";
+                Duration = 3;
+            })
+        end;
+    };
+--[[
+    oneshot = {
+        Aliases = {"oneshot","instantkill","instakill","onetap","infdamage"};
+        Description = "Instantly kill any enemies you hit.";
+        Function = function(Enabling,Args)
+            Toggles.OneShot = Enabling
+            local currenttext = ""
+            if Enabling == true then
+                currenttext = "OneShot is now ON!"
+            else
+                currenttext = "OneShot is now OFF!"
+            end
+            game.StarterGui:SetCore("SendNotification", {
+                Title = "notification";
+                Text = currenttext;
+                Icon = "rbxassetid://2541869220";
+                Duration = 3;
+            })
+        end;
+    };
+--]]
+    silentaim = {
+        Aliases = {"silentaim","alwayshit","nevermiss","aimbot"};
+        Description = "Makes all your shots hit the target closest to your mouse.";
+        Function = function(Enabling,Args)
+            Toggles.SilentAim = Enabling
+            local currenttext = ""
+            if Enabling == true then
+                currenttext = "SilentAim is now ON!"
+            else
+                currenttext = "SilentAim is now OFF!"
             end
             game.StarterGui:SetCore("SendNotification", {
                 Title = "notification";
@@ -421,6 +598,14 @@ for i,v in pairs(Commands) do
     new.Text = string.gsub(i, "_", " ").." "..v.Description
 end
 
+-- INITIAL CONNECTION HANDLING --
+
+if Player.Character ~= nil then
+   CharacterLoaded(Player.Character)
+end
+Player.CharacterAdded:Connect(CharacterLoaded)
+
+-- KEYBIND STUFF --
 
 UserInputService.InputBegan:Connect(function(inputobject, stuffhappening)
     local Focused = UserInputService:GetFocusedTextBox()
@@ -566,11 +751,16 @@ UserInputService.InputEnded:Connect(function(inputobject, stuffhappening)
     end
 end)
 
+-- COMMANDS & INJECTED MESSAGE --
+
 warn([[
 COMMANDS CAN BE DONE AS /e command OR :command
 
 :killaura - Attacks any enemy near you
 :unkillaura - Turns off killaura
+
+:silentaim - Makes your attacks always hit the closest person to your mouse
+:unsilentaim - Turns off silentaim
 
 :autoblock - Blocks incoming melee attacks
 :unautoblock - Turns off autoblock
