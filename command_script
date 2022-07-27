@@ -152,10 +152,11 @@ local function RenderStepped()
                 local Character = Enemies[i].Character
                 if Character ~= nil and Character:FindFirstChild("HumanoidRootPart") and Player:DistanceFromCharacter(Character.HumanoidRootPart.Position) <= Variables.KillAuraDistance then
                     Attack(Character)
+                    wait(0.3)
                 end
             end
         end
-        wait(0.6)
+        wait(1)
         Debounces.KillAura = false
     end
 end
@@ -225,8 +226,12 @@ namecall = hookmetamethod(game, "__namecall", function(self, ...)
                     AttackType = "Jab"
                 end
                 local Target = GetClosest()
-                if Target ~= nil then
+                if Target ~= nil and AttackType == "Gun" then
                     game.ReplicatedStorage.Server.Events.Attack.FireServer(game.ReplicatedStorage.Server.Events.Attack, AttackType, Target, Args[3][2], nil, false)
+                elseif Target ~= nil and AttackType == "Charged" then
+                    game.ReplicatedStorage.Server.Events.Attack.FireServer(game.ReplicatedStorage.Server.Events.Attack, AttackType, Target, Args[3][2], 1.0478, true)
+                else
+                    game.ReplicatedStorage.Server.Events.Attack.FireServer(game.ReplicatedStorage.Server.Events.Attack, AttackType, Target, Args[3][2], 1.0478, true)
                 end
                 if Toggles.AutoBlock then
                     spawn(function()
@@ -764,6 +769,9 @@ COMMANDS CAN BE DONE AS /e command OR :command
 
 :autoblock - Blocks incoming melee attacks
 :unautoblock - Turns off autoblock
+
+:infstamina - Gives you infinite stamina
+:uninfstamina - Removes infinite stamina
 
 :superrun - Enables super run
 :unsuperrun - Disables super run
